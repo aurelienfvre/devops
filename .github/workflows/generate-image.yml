@@ -15,18 +15,28 @@ jobs:
           API_KEY: ${{ secrets.DYNAPICTURES_API_KEY }}
         run: |
           mkdir -p images
-          MSG=$(git log -1 --pretty=%B)
+          MSG=$(git log -1 --pretty=%B | tr -d '\n' | tr -d '"') # Nettoyage rapide du message pour ne pas casser le JSON
           
           # 1. Génération et téléchargement via curl + jq
-          URL=$(curl -s -X POST https://api.dynapictures.com/designs/2379038427 -H "Authorization: Bearer $API_KEY" -H "Content-Type: application/json" -d "{\"params\": [{\"name\": \"title\", \"text\": \"$MSG\"}]}" | jq -r '.imageUrl')
+          # On envoie $MSG au calque "title" ET au calque "AI image 2"
+          PAYLOAD="{\"params\": [{\"name\": \"title\", \"text\": \"$MSG\"}, {\"name\": \"AI image 2\", \"text\": \"$MSG\"}]}"
+          
+          URL=$(curl -s -X POST https://api.dynapictures.com/designs/2379038427 \
+            -H "Authorization: Bearer $API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" | jq -r '.imageUrl')
+            
           curl -s "$URL" -o images/${{ github.sha }}.png
           
           # 2. Création rapide du fichier HTML
           echo "<h1>Galerie IA</h1>" > images/index.html
-          for img in images/*.png; do echo "<p>$(basename $img)</p><img src='$(basename $img)' width='400'>" >> images/index.html; done
+          for img in images/*.png; do 
+            # On ignore le fichier s'il n'y a pas d'image
+            [ -e "$img" ] || continue
+            echo "<p>$(basename "$img")</p><img src='$(basename "$img")' width='400'>" >> images/index.html
+          done
 
       - uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./images
-
