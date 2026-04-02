@@ -1,0 +1,60 @@
+name: Generate Image & Deploy Pages
+
+on:
+  push:
+    branches:
+      - main # Change en 'master' si ta branche principale s'appelle master
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # Nécessaire pour lire l'historique des commits
+
+      - name: Récupérer le message du commit
+        id: commit
+        run: |
+          MESSAGE=$(git log -1 --pretty=%B)
+          echo "msg=$MESSAGE" >> $GITHUB_OUTPUT
+
+      - name: Générer et télécharger l'image
+        env:
+          API_KEY: ${{ secrets.DYNAPICTURES_API_KEY }}
+        run: |
+          mkdir -p images
+          
+          # Appel à l'API DynaPictures avec ton UID et le calque "title"
+          REPONSE=$(curl -s -X POST "https://api.dynapictures.com/designs/2379038427" \
+            -H "Authorization: Bearer $API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"params\": [{\"name\": \"title\", \"text\": \"${{ steps.commit.outputs.msg }}\"}]}")
+          
+          # Extraction de l'URL de l'image
+          IMAGE_URL=$(echo $REPONSE | jq -r '.imageUrl')
+          
+          # Téléchargement de l'image
+          curl -s "$IMAGE_URL" -o images/${{ github.sha }}.png
+
+      - name: Générer le fichier index.html
+        run: |
+          echo "<!DOCTYPE html><html><head><title>Galerie IA</title></head><body>" > images/index.html
+          echo "<h1>Mes images générées par commit</h1>" >> images/index.html
+          for img in images/*.png; do
+            # On vérifie qu'il y a bien des images pour éviter les erreurs
+            [ -e "$img" ] || continue
+            filename=$(basename "$img")
+            echo "<div style='margin-bottom:20px;'><p>Commit ID : $filename</p><img src='$filename' width='400'></div>" >> images/index.html
+          done
+          echo "</body></html>" >> images/index.html
+
+      - name: Déployer sur GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./images # Déploie uniquement le dossier images
